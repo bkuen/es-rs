@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "es",
+    "es-macros"
+]
+
+resolver = "2"
