@@ -1,0 +1,42 @@
+networks:
+  es:
+
+volumes:
+  pg_data:
+
+services:
+  database:
+    image: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: es
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d cloud" ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - es
+  database-migrations:
+    image: flyway/flyway
+    volumes:
+      - ./database/migrations:/flyway/project
+      - ./database/seed:/flyway/seed
+    depends_on:
+      database:
+        condition: service_healthy
+    command:
+      - -url=jdbc:postgresql://database:5432/es
+      - -user=user
+      - -password=pass
+      - -locations=filesystem:/flyway/project,filesystem:/flyway/seed
+      - -validateMigrationNaming=true
+      - migrate
+    networks:
+      - es

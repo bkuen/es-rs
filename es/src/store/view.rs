@@ -2,10 +2,8 @@ use std::sync::{Arc};
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use crate::store::aggregate::Aggregate;
-use crate::store::{AggregateEvent, AggregateStore, EventSourcedAggregate};
+use crate::store::{AggregateEvent};
 use crate::store::event::{DomainEvent, EventApplier};
-use crate::store::snapshot::SnapshotApplier;
 
 #[async_trait]
 pub trait View<A: EventApplier> {
@@ -15,15 +13,6 @@ pub trait View<A: EventApplier> {
 #[async_trait]
 pub trait HandleEvents<E: DomainEvent> {
     async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<E>]);
-}
-
-#[async_trait]
-pub trait ViewUpdater
-{
-    async fn update_views<E>(&self, aggregate_id: Uuid, events: &[AggregateEvent<E>])
-    where
-        E: DomainEvent + Send + Sync + 'static,
-    {}
 }
 
 #[derive(Clone, Debug)]

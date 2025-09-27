@@ -1,8 +1,8 @@
-use es::postgres::event::DummyEventStore;
+use es::postgres::event::{EventStore};
 use es::store::aggregate::Aggregate;
 use es::store::event::{DomainEvent, EventApplier};
 use es::store::snapshot::{Snapshot, SnapshotApplier};
-use es::store::view::{HandleEvents, View, ViewStore, ViewUpdater};
+use es::store::view::{HandleEvents, View, ViewStore};
 use es::store::{AggregateEvent, AggregateStore};
 use es::store::EventSourcedAggregate;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 use es::dispatch::Dispatcher;
 use es::postgres::transaction::PgTransaction;
+use es::store::transaction::Transaction;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PersonAggregate {
@@ -150,6 +151,7 @@ impl View<PersonAggregate> for PersonView {
                 PersonEvent::Aging { age } => {
                     println!("Updating view for person {}: aged to {}", aggregate_id, age);
                 }
+                _ => println!("It does not match")
             }
         }
     }
@@ -185,6 +187,36 @@ impl EventApplier for OrganizationAggregate {
                 self.name = name.clone();
                 println!("Organization created with name: {}", self.name);
             }
+            _ => println!("It does not match")
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct OrganizationSnapshot {
+    name: String,
+}
+
+impl Snapshot for OrganizationSnapshot {
+    fn snapshot_name(&self) -> String {
+        "OrganizationSnapshot".to_string()
+    }
+}
+
+impl SnapshotApplier for OrganizationAggregate {
+    type Snapshot = OrganizationSnapshot;
+
+    fn apply_snapshot(&mut self, snapshot: Self::Snapshot) {
+        self.name = snapshot.name;
+
+        println!("Organization snapshot applied: name={}", self.name);
+    }
+}
+
+impl From<&OrganizationAggregate> for OrganizationSnapshot {
+    fn from(aggregate: &OrganizationAggregate) -> Self {
+        Self {
+            name: aggregate.name.clone(),
         }
     }
 }
@@ -199,53 +231,19 @@ impl View<OrganizationAggregate> for OrganizationView {
                 OrganizationEvent::Create { name } => {
                     println!("Updating view for organization {}: created with name {}", aggregate_id, name);
                 }
+                _ => println!("It does not match")
             }
         }
     }
 }
 
-pub enum MyViewWrapper {
-    PersonView(PersonView),
-    OrganizationView(OrganizationView),
-}
-
-#[async_trait::async_trait]
-impl HandleEvents<PersonEvent> for MyViewWrapper {
-    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<PersonEvent>]) {
-        if let MyViewWrapper::PersonView(view) = self {
-            view.update(aggregate_id, events).await;
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl HandleEvents<OrganizationEvent> for MyViewWrapper {
-    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<OrganizationEvent>]) {
-        if let MyViewWrapper::OrganizationView(view) = self {
-            view.update(aggregate_id, events).await;
-        }
-    }
-}
-
-impl From<PersonView> for MyViewWrapper {
-    fn from(view: PersonView) -> Self {
-        MyViewWrapper::PersonView(view)
-    }
-}
-
-impl From<OrganizationView> for MyViewWrapper {
-    fn from(view: OrganizationView) -> Self {
-        MyViewWrapper::OrganizationView(view)
-    }
-}
-
-// #[es_macros::view_store(
-//     views(
-//         PersonView,
-//         OrganizationView,
-//     )
-// )]
-// pub struct BetterViewStore;
+#[es_macros::view_wrapper(
+    views(
+        PersonView(PersonEvent),
+        OrganizationView(OrganizationEvent),
+    )
+)]
+pub struct MyViewWrapper;
 
 #[tokio::main]
 async fn main() {
@@ -261,28 +259,50 @@ async fn main() {
         name: "Updated Name".to_string(),
     };
 
+    let person_event2 = PersonEvent::Rename{
+        name: "Updated Name 2".to_string(),
+    };
+
+    let person_event3 = PersonEvent::Rename{
+        name: "Updated Name 3".to_string(),
+    };
+
+    let person_event4 = PersonEvent::Rename{
+        name: "Updated Name 4".to_string(),
+    };
+
+    let person_event5 = PersonEvent::Rename{
+        name: "Updated Name 5".to_string(),
+    };
+
+
     let mut organization_aggregate = EventSourcedAggregate::<OrganizationAggregate>::new(Uuid::now_v7());
 
     let organization_event = OrganizationEvent::Create {
         name: "Organization Name".to_string(),
     };
 
-    let event_store = Arc::new(DummyEventStore::new());
+    let event_store = Arc::new(EventStore::new("events", "snapshots", 2, &pool));
 
     let person_view = PersonView {};
     let organization_view = OrganizationView {};
     // let mut store = ViewStore::<MyViewWrapper, _>::new(event_store);
     // store.register_view(view).await;
 
-    person_aggregate.apply_event(&person_event);
-    organization_aggregate.apply_event(&organization_event);
-    // store.update_views(aggregate.id, &[event.clone()]).await;
-
+    person_aggregate.add_event(person_event);
+    person_aggregate.add_event(person_event2);
+    person_aggregate.add_event(person_event3);
+    person_aggregate.add_event(person_event4);
+    person_aggregate.add_event(person_event5);
+    organization_aggregate.add_event(organization_event);
 
     let view_store = Arc::new(ViewStore::<MyViewWrapper>::new());
     view_store.register_view(person_view).await;
     view_store.register_view(organization_view).await;
 
     let dispatcher = Dispatcher::new(event_store.clone(), view_store.clone());
-    dispatcher.dispatch(&mut person_aggregate, Some(&())).await.unwrap();
+    dispatcher.dispatch(&mut person_aggregate, Some(&tx)).await.unwrap();
+    dispatcher.dispatch(&mut organization_aggregate, Some(&tx)).await.unwrap();
+
+    tx.commit().await.expect("failed to commit")
 }

@@ -46,26 +46,23 @@ impl <T: DomainEvent> AggregateEvent<T> {
     }
 }
 
-// impl<T: DomainEvent> Event for AggregateEvent<T> {
-//     type Id = uuid::Uuid;
-//     type Payload = T;
-//
-//     fn event_id(&self) -> Self::Id {
-//         self.event_id
-//     }
-//
-//     fn event_name(&self) -> &String {
-//         &self.event_name
-//     }
-//
-//     fn payload(&self) -> &Self::Payload {
-//         &self.event_data
-//     }
-//
-//     fn occurred_at(&self) -> DateTime<Utc> {
-//         self.occurred_at
-//     }
-// }
+impl<T: DomainEvent> AggregateEvent<T> {
+    pub fn event_id(&self) -> Uuid {
+        self.event_id
+    }
+
+    pub fn event_name(&self) -> &String {
+        &self.event_name
+    }
+
+    pub fn payload(&self) -> &T {
+        &self.event_data
+    }
+
+    pub fn occurred_at(&self) -> DateTime<Utc> {
+        self.occurred_at
+    }
+}
 
 pub struct EventSourcedAggregate<A: Aggregate + EventApplier> {
     aggregate: A,
@@ -119,6 +116,17 @@ impl<A: Aggregate + EventApplier> EventSourcedAggregate<A> {
 
     pub(crate) fn set_version(&mut self, version: u64) {
         self.version = version;
+    }
+
+    pub(crate) fn should_snapshot(&self, snapshot_threshold: usize) -> bool {
+        if snapshot_threshold == 0 {
+            return false; // treat 0 as "never snapshot"
+        }
+
+        let t = snapshot_threshold as u64;
+        let before = self.version / t;           // bucket index before committing
+        let after  = self.pending_version() / t; // bucket index after committing pending events
+        after > before
     }
 
 }
@@ -181,7 +189,7 @@ pub trait AggregateStore: Send + Sync {
         A::Event: Unpin + 'static,
         A::Snapshot: Unpin + 'static;
 
-    async fn save<A>(&self, aggregate: &mut EventSourcedAggregate<A>, transaction: Option<&Self::Transaction>) -> Result<(), Self::Error>
+    async fn save<A>(&self, aggregate: &mut EventSourcedAggregate<A>, transaction: Option<&Self::Transaction>) -> Result<Vec<AggregateEvent<A::Event>>, Self::Error>
     where
         A: Aggregate + EventApplier + SnapshotApplier,
         A::Event: Unpin + 'static,

@@ -1,14 +1,12 @@
-use std::marker::PhantomData;
 use std::sync::Arc;
 use crate::store::aggregate::Aggregate;
 use crate::store::{AggregateStore, EventSourcedAggregate};
 use crate::store::event::{EventApplier};
 use crate::store::snapshot::SnapshotApplier;
-use crate::store::view::{HandleEvents, ViewStore, ViewUpdater};
+use crate::store::view::{HandleEvents, ViewStore};
 
 pub struct Dispatcher<S, W>
     where S: AggregateStore + Send + Sync,
-          // V: ViewUpdater + Send + Sync,
           W: Send + Sync
 {
     aggregate_store: Arc<S>,
@@ -17,7 +15,6 @@ pub struct Dispatcher<S, W>
 
 impl<S, W> Dispatcher<S, W>
     where S: AggregateStore + Send + Sync,
-          // V: ViewUpdater + Send + Sync,
           W: Send + Sync
 {
     pub fn new(aggregate_store: Arc<S>, view_store: Arc<ViewStore<W>>) -> Self {
@@ -33,13 +30,9 @@ impl<S, W> Dispatcher<S, W>
               A::Snapshot: Unpin + for<'a> From<&'a A> + 'static,
               W: HandleEvents<A::Event>
     {
-        self.aggregate_store.save(aggregate, transaction).await?;
+        let events = self.aggregate_store.save(aggregate, transaction).await?;
 
-        let events = aggregate.pending_events();
-
-        self.view_store.update_views::<A::Event>(aggregate.aggregate_id(), events).await;
-
-        aggregate.commit_events();
+        self.view_store.update_views::<A::Event>(aggregate.aggregate_id(), &events).await;
 
         Ok(())
     }

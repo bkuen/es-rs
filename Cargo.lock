@@ -290,6 +290,7 @@ dependencies = [
  "chrono",
  "es-macros",
  "log",
+ "num-traits",
  "serde",
  "serde_json",
  "sqlx",
