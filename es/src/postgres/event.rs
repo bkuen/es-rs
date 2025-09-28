@@ -217,7 +217,6 @@ struct PgAggregateEvent<T: DomainEvent> {
 struct PgSnapshot<S: Snapshot> {
     #[sqlx(try_from = "i64")]
     stream_version: u64,
-    snapshot_name: String,
     #[sqlx(json)]
     snapshot_data: S,
 }

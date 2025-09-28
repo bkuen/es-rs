@@ -1,10 +1,10 @@
 // event_registry_derive/src/lib.rs
 
 use proc_macro::TokenStream;
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Ident, Lit, MetaNameValue, Token, Expr, ExprLit, punctuated::Punctuated, Path, Result, ItemStruct, Meta};
+use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::token::Paren;
+use syn::{parse_macro_input, punctuated::Punctuated, Ident, ItemStruct, Path, Result, Token};
 
 struct ViewWrapperArgs {
     views: Punctuated<ViewWithEvent, Token![,]>,
@@ -83,17 +83,21 @@ pub fn view_wrapper(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
             #[async_trait::async_trait]
             impl HandleEvents<#event_path> for #ident {
-                async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<#event_path>]) {
+                type Error = <#variant_ident as View>::Error;
+
+                async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<#event_path>]) -> Result<(), Self::Error> {
                     if let #ident::#variant_ident(view) = self {
-                        view.update(aggregate_id, events).await;
+                        view.update(aggregate_id, events).await?;
                     }
+
+                    Ok(())
                 }
             }
         })
     }
 
     let expanded = quote! {
-        pub enum #ident {
+        #vis enum #ident {
             #(#wrapper_variants),*
         }
 

@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::Arc;
 use crate::store::aggregate::Aggregate;
 use crate::store::{AggregateStore, EventSourcedAggregate};
@@ -15,7 +16,7 @@ pub struct Dispatcher<S, W>
 
 impl<S, W> Dispatcher<S, W>
     where S: AggregateStore + Send + Sync,
-          W: Send + Sync
+          W: Send + Sync,
 {
     pub fn new(aggregate_store: Arc<S>, view_store: Arc<ViewStore<W>>) -> Self {
         Self {
@@ -24,15 +25,16 @@ impl<S, W> Dispatcher<S, W>
         }
     }
 
-    pub async fn dispatch<A>(&self, aggregate: &mut EventSourcedAggregate<A>, transaction: Option<&S::Transaction>) -> Result<(), S::Error>
+    pub async fn dispatch<A, E>(&self, aggregate: &mut EventSourcedAggregate<A>, transaction: Option<&S::Transaction>) -> Result<(), E>
         where A: Aggregate + EventApplier + SnapshotApplier,
               A::Event: Unpin + 'static,
               A::Snapshot: Unpin + for<'a> From<&'a A> + 'static,
-              W: HandleEvents<A::Event>
+              W: HandleEvents<A::Event, Error=E>,
+              E: Error + From<W::Error> + From<S::Error>,
     {
         let events = self.aggregate_store.save(aggregate, transaction).await?;
 
-        self.view_store.update_views::<A::Event>(aggregate.aggregate_id(), &events).await;
+        self.view_store.update_views::<A::Event, E>(aggregate.aggregate_id(), &events).await?;
 
         Ok(())
     }

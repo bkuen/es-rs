@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::{Arc};
 use async_trait::async_trait;
 use tokio::sync::Mutex;
@@ -6,13 +7,18 @@ use crate::store::{AggregateEvent};
 use crate::store::event::{DomainEvent, EventApplier};
 
 #[async_trait]
-pub trait View<A: EventApplier> {
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<A::Event>]);
+pub trait View {
+    type Aggregate: EventApplier;
+    type Error: Error;
+
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<<Self::Aggregate as EventApplier>::Event>]) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
 pub trait HandleEvents<E: DomainEvent> {
-    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<E>]);
+    type Error: Error;
+
+    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<E>]) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -29,23 +35,33 @@ impl<W> ViewStore<W>
         }
     }
 
-    pub async fn register_view<V, A>(&self, view: V)
+    pub async fn register_view<V>(&self, view: V)
     where
-        V: View<A> + Send + Sync + Into<W> + 'static,
-        A: EventApplier + Send + Sync + 'static,
+        V: View + Send + Sync + Into<W> + 'static,
     {
         let mut views = self.views.lock().await;
         views.push(view.into());
     }
 
-    pub async fn update_views<E>(&self, aggregate_id: Uuid, events: &[AggregateEvent<E>])
+    pub async fn update_views<E, Err>(&self, aggregate_id: Uuid, events: &[AggregateEvent<E>]) -> Result<(), Err>
     where
         E: DomainEvent + Send + Sync + 'static,
         W: HandleEvents<E> + Send + Sync,
+        Err: Error + From<<W as HandleEvents<E>>::Error>
     {
         let mut views = self.views.lock().await;
         for view in views.iter_mut() {
-            view.handle(aggregate_id, events).await;
+            view.handle(aggregate_id, events).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<W> Default for ViewStore<W> {
+    fn default() -> Self {
+        Self {
+            views: Default::default(),
         }
     }
 }

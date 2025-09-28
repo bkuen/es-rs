@@ -5,7 +5,6 @@ use uuid::Uuid;
 use crate::store::aggregate::{Aggregate, AggregateVersion};
 use crate::store::event::{DomainEvent, EventApplier};
 use crate::store::snapshot::SnapshotApplier;
-use crate::store::transaction::Transaction;
 
 pub mod aggregate;
 pub mod event;

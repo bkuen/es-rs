@@ -3,13 +3,14 @@ use es::store::aggregate::Aggregate;
 use es::store::event::{DomainEvent, EventApplier};
 use es::store::snapshot::{Snapshot, SnapshotApplier};
 use es::store::view::{HandleEvents, View, ViewStore};
-use es::store::{AggregateEvent, AggregateStore};
+use es::store::{AggregateEvent};
 use es::store::EventSourcedAggregate;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 use es::dispatch::Dispatcher;
+use es::error::EsError;
 use es::postgres::transaction::PgTransaction;
 use es::store::transaction::Transaction;
 
@@ -25,7 +26,7 @@ impl Aggregate for PersonAggregate {
 
     fn new(id: Uuid) -> Self {
         Self {
-            id: Uuid::now_v7(),
+            id,
             name: "Default Name".to_string(),
             age: 18,
         }
@@ -141,8 +142,11 @@ impl From<OrganizationEvent> for EventWrapper {
 pub struct PersonView {}
 
 #[async_trait::async_trait]
-impl View<PersonAggregate> for PersonView {
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<PersonEvent>]) {
+impl View for PersonView {
+    type Aggregate = PersonAggregate;
+    type Error = EsError;
+
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<PersonEvent>]) -> Result<(), Self::Error> {
         for event in events {
             match &**event {
                 PersonEvent::Rename { name } => {
@@ -151,9 +155,10 @@ impl View<PersonAggregate> for PersonView {
                 PersonEvent::Aging { age } => {
                     println!("Updating view for person {}: aged to {}", aggregate_id, age);
                 }
-                _ => println!("It does not match")
             }
         }
+
+        Ok(())
     }
 }
 
@@ -168,7 +173,7 @@ impl Aggregate for OrganizationAggregate {
 
     fn new(id: Uuid) -> Self {
         Self {
-            id: Uuid::now_v7(),
+            id,
             name: "Default Name".to_string(),
         }
     }
@@ -187,7 +192,6 @@ impl EventApplier for OrganizationAggregate {
                 self.name = name.clone();
                 println!("Organization created with name: {}", self.name);
             }
-            _ => println!("It does not match")
         }
     }
 }
@@ -224,16 +228,20 @@ impl From<&OrganizationAggregate> for OrganizationSnapshot {
 pub struct OrganizationView {}
 
 #[async_trait::async_trait]
-impl View<OrganizationAggregate> for OrganizationView {
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<OrganizationEvent>]) {
+impl View for OrganizationView {
+    type Aggregate = OrganizationAggregate;
+    type Error = EsError;
+
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<OrganizationEvent>]) -> Result<(), Self::Error> {
         for event in events {
             match &**event {
                 OrganizationEvent::Create { name } => {
                     println!("Updating view for organization {}: created with name {}", aggregate_id, name);
                 }
-                _ => println!("It does not match")
             }
         }
+
+        Ok(())
     }
 }
 
@@ -286,8 +294,6 @@ async fn main() {
 
     let person_view = PersonView {};
     let organization_view = OrganizationView {};
-    // let mut store = ViewStore::<MyViewWrapper, _>::new(event_store);
-    // store.register_view(view).await;
 
     person_aggregate.add_event(person_event);
     person_aggregate.add_event(person_event2);
