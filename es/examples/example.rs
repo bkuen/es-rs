@@ -290,7 +290,10 @@ async fn main() {
         name: "Organization Name".to_string(),
     };
 
-    let event_store = Arc::new(EventStore::new("events", "snapshots", 2, &pool));
+    let event_store_config = es::postgres::event::Config::default()
+        .with_events_table_name("events")
+        .with_snapshots_table_name("snapshots");
+    let event_store = Arc::new(EventStore::new(event_store_config, &pool));
 
     let person_view = PersonView {};
     let organization_view = OrganizationView {};

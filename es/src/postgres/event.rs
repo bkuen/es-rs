@@ -1,4 +1,5 @@
 use std::ops::DerefMut;
+use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use log::debug;
@@ -14,24 +15,52 @@ use crate::store::snapshot::{Snapshot, SnapshotApplier};
 use crate::store::transaction::Transaction;
 
 #[derive(Clone)]
+pub struct Config {
+    pub(crate) snapshot_threshold: usize,
+    pub(crate) events_table_name: &'static str,
+    pub(crate) snapshots_table_name: &'static str,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            snapshot_threshold: 100,
+            events_table_name: "events",
+            snapshots_table_name: "snapshots",
+        }
+    }
+}
+
+impl Config {
+    pub fn with_snapshot_threshold(mut self, threshold: usize) -> Self {
+        self.snapshot_threshold = threshold;
+        self
+    }
+
+    pub fn with_events_table_name(mut self, name: &'static str) -> Self {
+        self.events_table_name = name;
+        self
+    }
+
+    pub fn with_snapshots_table_name(mut self, name: &'static str) -> Self {
+        self.snapshots_table_name = name;
+        self
+    }
+}
+
+#[derive(Clone)]
 pub struct EventStore {
-    snapshot_threshold: usize,
-    events_table_name: String,
-    snapshots_table_name: String,
+    config: Arc<Config>,
     pool: Pool<Postgres>,
 }
 
 impl EventStore {
     pub fn new(
-        events_table_name: &'static str,
-        snapshots_table_name: &'static str,
-        snapshot_threshold: usize,
+        config: Config,
         pool: &Pool<Postgres>
     ) -> Self {
         Self {
-            events_table_name: events_table_name.to_string(),
-            snapshots_table_name: snapshots_table_name.to_string(),
-            snapshot_threshold,
+            config: Arc::new(config),
             pool: pool.clone(),
         }
     }
@@ -59,7 +88,7 @@ impl EventStore {
         A::Snapshot: Unpin + 'static
     {
         let result = sqlx::query_as::<_, PgSnapshot<A::Snapshot>>(
-            format!("SELECT stream_version, snapshot_name, snapshot_data FROM {} WHERE stream_id = $1 AND stream_name = $2", &self.events_table_name).as_str()
+            format!("SELECT stream_version, snapshot_name, snapshot_data FROM {} WHERE stream_id = $1 AND stream_name = $2", &self.config.events_table_name).as_str()
         )
             .bind(aggregate.aggregate_id())
             .bind(aggregate.aggregate_name().to_string())
@@ -88,7 +117,7 @@ impl EventStore {
         let snapshot_data = A::Snapshot::from(aggregate);
         let snapshot_name = snapshot_data.snapshot_name();
 
-        sqlx::query(format!("INSERT INTO {} (stream_id, stream_name, stream_version, snapshot_name, snapshot_data) VALUES ($1, $2, $3, $4, $5)", &self.snapshots_table_name).as_str())
+        sqlx::query(format!("INSERT INTO {} (stream_id, stream_name, stream_version, snapshot_name, snapshot_data) VALUES ($1, $2, $3, $4, $5)", &self.config.snapshots_table_name).as_str())
             .bind(aggregate.aggregate_id())
             .bind(aggregate.aggregate_name().to_string())
             .bind(aggregate_version)
@@ -135,7 +164,7 @@ impl AggregateStore for EventStore {
         let aggregate_version = i64::from_u64(version)
             .ok_or(EsError::InvalidVersion)?;
 
-        let rows: Vec<PgAggregateEvent<A::Event>> = sqlx::query_as(format!("SELECT stream_version, event_id, event_name, event_data, occurred_at FROM {} WHERE stream_id = $1 AND stream_name = $2 AND stream_version > $3 ORDER BY stream_version ASC", &self.events_table_name).as_str())
+        let rows: Vec<PgAggregateEvent<A::Event>> = sqlx::query_as(format!("SELECT stream_version, event_id, event_name, event_data, occurred_at FROM {} WHERE stream_id = $1 AND stream_name = $2 AND stream_version > $3 ORDER BY stream_version ASC", &self.config.events_table_name).as_str())
             .bind(aggregate.aggregate_id())
             .bind(aggregate.aggregate_name().to_string())
             .bind(aggregate_version)
@@ -171,7 +200,7 @@ impl AggregateStore for EventStore {
                 let aggregate_version = i64::from_u64(event.aggregate_version())
                     .ok_or(EsError::InvalidVersion)?;
 
-                sqlx::query(format!("INSERT INTO {} (stream_id, stream_name, stream_version, event_id, event_name, event_data, occurred_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", &self.events_table_name).as_str())
+                sqlx::query(format!("INSERT INTO {} (stream_id, stream_name, stream_version, event_id, event_name, event_data, occurred_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", &self.config.events_table_name).as_str())
                     .bind(aggregate.aggregate_id())
                     .bind(aggregate.aggregate_name().to_string())
                     .bind(aggregate_version)
@@ -185,7 +214,7 @@ impl AggregateStore for EventStore {
             }
 
             // We have to check whether we should take a snapshot before commiting the events
-            let should_snapshot = aggregate.should_snapshot(self.snapshot_threshold);
+            let should_snapshot = aggregate.should_snapshot(self.config.snapshot_threshold);
 
             // After saving, we must commit the events to avoid saving them twice
             let events = aggregate.commit_events();

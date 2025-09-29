@@ -292,7 +292,6 @@ dependencies = [
  "log",
  "num-traits",
  "serde",
- "serde_json",
  "sqlx",
  "thiserror",
  "tokio",
