@@ -313,5 +313,7 @@ async fn main() {
     dispatcher.dispatch(&mut person_aggregate, Some(&tx)).await.unwrap();
     dispatcher.dispatch(&mut organization_aggregate, Some(&tx)).await.unwrap();
 
+    let dispatcher2 = dispatcher.clone();
+
     tx.commit().await.expect("failed to commit")
 }

@@ -14,6 +14,18 @@ pub struct Dispatcher<S, W>
     view_store: Arc<ViewStore<W>>,
 }
 
+impl<S, W> Clone for Dispatcher<S, W>
+    where S: AggregateStore + Send + Sync,
+          W: Send + Sync,
+{
+    fn clone(&self) -> Self {
+        Self {
+            aggregate_store: self.aggregate_store.clone(),
+            view_store: self.view_store.clone(),
+        }
+    }
+}
+
 impl<S, W> Dispatcher<S, W>
     where S: AggregateStore + Send + Sync,
           W: Send + Sync,
