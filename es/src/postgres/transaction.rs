@@ -14,6 +14,10 @@ impl PgTransaction {
             inner: RwLock::new(pool.begin().await?),
         })
     }
+
+    pub fn inner_mut(&mut self) -> &mut sqlx::Transaction<'static, Postgres> {
+        self.inner.get_mut()
+    }
 }
 
 #[async_trait]

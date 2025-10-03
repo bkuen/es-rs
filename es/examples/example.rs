@@ -144,9 +144,10 @@ pub struct PersonView {}
 #[async_trait::async_trait]
 impl View for PersonView {
     type Aggregate = PersonAggregate;
+    type Transaction = PgTransaction;
     type Error = EsError;
 
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<PersonEvent>]) -> Result<(), Self::Error> {
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<PersonEvent>], tx: Option<&Self::Transaction>) -> Result<(), Self::Error> {
         for event in events {
             match &**event {
                 PersonEvent::Rename { name } => {
@@ -230,9 +231,10 @@ pub struct OrganizationView {}
 #[async_trait::async_trait]
 impl View for OrganizationView {
     type Aggregate = OrganizationAggregate;
+    type Transaction = PgTransaction;
     type Error = EsError;
 
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<OrganizationEvent>]) -> Result<(), Self::Error> {
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<OrganizationEvent>], tx: Option<&Self::Transaction>) -> Result<(), Self::Error> {
         for event in events {
             match &**event {
                 OrganizationEvent::Create { name } => {

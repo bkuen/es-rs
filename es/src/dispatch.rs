@@ -41,12 +41,12 @@ impl<S, W> Dispatcher<S, W>
         where A: Aggregate + EventApplier + SnapshotApplier,
               A::Event: Unpin + 'static,
               A::Snapshot: Unpin + for<'a> From<&'a A> + 'static,
-              W: HandleEvents<A::Event, Error=E>,
-              E: Error + From<W::Error> + From<S::Error>,
+              W: HandleEvents<A::Event, Transaction=S::Transaction, Error=E>,
+              E: Error + From<W::Error> + From<S::Error> + 'static,
     {
         let events = self.aggregate_store.save(aggregate, transaction).await?;
 
-        self.view_store.update_views::<A::Event, E>(aggregate.aggregate_id(), &events).await?;
+        self.view_store.update_views::<A::Event, E>(aggregate.aggregate_id(), &events, transaction).await?;
 
         Ok(())
     }

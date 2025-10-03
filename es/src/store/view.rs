@@ -5,20 +5,23 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use crate::store::{AggregateEvent};
 use crate::store::event::{DomainEvent, EventApplier};
+use crate::store::transaction::Transaction;
 
 #[async_trait]
 pub trait View {
     type Aggregate: EventApplier;
-    type Error: Error;
+    type Transaction: Transaction + Send + Sync;
+    type Error: Error + From<<Self::Transaction as Transaction>::Error>;
 
-    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<<Self::Aggregate as EventApplier>::Event>]) -> Result<(), Self::Error>;
+    async fn update(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<<Self::Aggregate as EventApplier>::Event>], tx: Option<&Self::Transaction>) -> Result<(), Self::Error>;
 }
 
 #[async_trait]
 pub trait HandleEvents<E: DomainEvent> {
     type Error: Error;
+    type Transaction: Transaction + Send + Sync;
 
-    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<E>]) -> Result<(), Self::Error>;
+    async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<E>], tx: Option<&Self::Transaction>) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -43,7 +46,7 @@ impl<W> ViewStore<W>
         views.push(view.into());
     }
 
-    pub async fn update_views<E, Err>(&self, aggregate_id: Uuid, events: &[AggregateEvent<E>]) -> Result<(), Err>
+    pub async fn update_views<E, Err>(&self, aggregate_id: Uuid, events: &[AggregateEvent<E>], tx: Option<&W::Transaction>) -> Result<(), Err>
     where
         E: DomainEvent + Send + Sync + 'static,
         W: HandleEvents<E> + Send + Sync,
@@ -51,7 +54,7 @@ impl<W> ViewStore<W>
     {
         let mut views = self.views.lock().await;
         for view in views.iter_mut() {
-            view.handle(aggregate_id, events).await?;
+            view.handle(aggregate_id, events, tx).await?;
         }
 
         Ok(())

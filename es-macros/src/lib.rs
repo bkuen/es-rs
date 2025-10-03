@@ -84,10 +84,11 @@ pub fn view_wrapper(attrs: TokenStream, item: TokenStream) -> TokenStream {
             #[async_trait::async_trait]
             impl HandleEvents<#event_path> for #ident {
                 type Error = <#variant_ident as View>::Error;
+                type Transaction = <#variant_ident as View>::Transaction;
 
-                async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<#event_path>]) -> Result<(), Self::Error> {
+                async fn handle(&mut self, aggregate_id: Uuid, events: &[AggregateEvent<#event_path>], tx: Option<&Self::Transaction>) -> Result<(), Self::Error> {
                     if let #ident::#variant_ident(view) = self {
-                        view.update(aggregate_id, events).await?;
+                        view.update(aggregate_id, events, tx).await?;
                     }
 
                     Ok(())
