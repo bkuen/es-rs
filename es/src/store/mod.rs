@@ -69,6 +69,12 @@ pub struct EventSourcedAggregate<A: Aggregate + EventApplier> {
     events: Vec<AggregateEvent<A::Event>>,
 }
 
+impl<A: Aggregate + EventApplier> Default for EventSourcedAggregate<A> {
+    fn default() -> Self {
+        Self::new(Uuid::now_v7())
+    }
+}
+
 impl<A: Aggregate + EventApplier> EventSourcedAggregate<A> {
 
     pub fn new(id: Uuid) -> Self {
@@ -81,6 +87,10 @@ impl<A: Aggregate + EventApplier> EventSourcedAggregate<A> {
 
     pub fn inner_ref(&self) -> &A {
         &self.aggregate
+    }
+
+    pub fn into_inner(self) -> A {
+        self.aggregate
     }
 
     pub fn add_event(&mut self, event: A::Event) {
